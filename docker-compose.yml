@@ -1,0 +1,23 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    env_file: .env
+    depends_on:
+      - osrm
+  # 自建 OSRM 路线服务（避免公共实例限流）
+  # 首次启动需下载路网数据，见 https://hub.docker.com/r/osrm/osrm-backend
+  osrm:
+    image: osrm/osrm-backend
+    command: osrm-routed --algorithm mld /data/osrm
+    ports:
+      - "5000:5000"
+    volumes:
+      - osrm-data:/data
+    # 启动前需先 osrm-extract + osrm-partition + osrm-customize 处理 OSM 数据
+    # 这里只给骨架；实际请按官方文档准备数据后取消下面注释
+    # profiles: [car]
+
+volumes:
+  osrm-data:

@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Travel Agent
+travel_agent_memory.db
+*.db
