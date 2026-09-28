@@ -130,7 +130,7 @@ def run_streaming(
         text = _stream_llm(
             _PLAN_SYSTEM,
             user_msg,
-            max_tokens=4096,
+            max_tokens=8192,
             model=s.planner_model or s.llm_model,
             on_chunk=on_chunk,
         )

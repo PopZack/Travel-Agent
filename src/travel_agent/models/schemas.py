@@ -68,7 +68,7 @@ class HotelOffer(BaseModel):
 
 class Place(BaseModel):
     name: str = "未命名"
-    category: Literal["attraction", "restaurant", "hotel"] = "attraction"
+    category: str = "attraction"  # 宽容 LLM 返回的各种类型
     rating: float | None = None
     address: str | None = None
     lat: float | None = None
