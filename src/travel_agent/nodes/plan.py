@@ -22,12 +22,17 @@ from travel_agent.state import TravelState
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM = """你是旅行规划师。编排按天行程，只输出精简结构，不要 note，不要 address。
+_SYSTEM = """你是旅行规划师。编排按天行程。
 
-输出紧凑JSON，不要代码块：
-{"days":[{"day":1,"date":"YYYY-MM-DD","activities":[{"time_start":"09:00","time_end":"11:30","place":{"name":"清水寺","category":"attraction"},"cost_cny":400}],"hotel":"酒店名","daily_cost_cny":800}],"total_cost_cny":3200}
+每天必须包含：景点、午餐、晚餐、住宿费。cost_cny 是人民币。
+- 景点门票：如实估算（如清水寺400日元≈20元）
+- 午餐/晚餐：每人每餐 100-300 元
+- 住宿：每晚 500-1500 元，写在当天 daily_cost_cny 里
+- daily_cost_cny = 当天所有活动 cost_cny 之和 + 住宿费
+- total_cost_cny = 所有天之和，不超预算
 
-规则：单日3-5活动，总费用不超预算。只输出JSON。"""
+输出紧凑JSON，不要代码块，不要解释：
+{"days":[{"day":1,"date":"YYYY-MM-DD","activities":[{"time_start":"09:00","time_end":"11:30","place":{"name":"清水寺","category":"attraction"},"note":"少走路提示","cost_cny":20},{"time_start":"12:00","time_end":"13:00","place":{"name":"午餐店","category":"restaurant"},"cost_cny":600}],"hotel":"酒店名","daily_cost_cny":1200}],"total_cost_cny":4800}"""
 
 
 async def plan(state: TravelState) -> dict:

@@ -67,8 +67,8 @@ class HotelOffer(BaseModel):
 
 
 class Place(BaseModel):
-    name: str
-    category: Literal["attraction", "restaurant", "hotel"]
+    name: str = "未命名"
+    category: Literal["attraction", "restaurant", "hotel"] = "attraction"
     rating: float | None = None
     address: str | None = None
     lat: float | None = None

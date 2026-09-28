@@ -11,22 +11,20 @@ from travel_agent.state import TravelState
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM = """你是一个旅行需求解析器。从用户的自然语言描述中抽取结构化旅行意图。
-输出严格 JSON，字段：
-- destination: 目的地（中文城市或国家名）
-- destination_iata: 目的地最近机场 IATA 代码（如知道）
-- origin: 出发地
-- origin_iata: 出发地最近机场 IATA
-- start_date: ISO 日期 YYYY-MM-DD（如"下个月初"需推断具体日期）
-- end_date: ISO 日期
-- days: 天数
-- adults: 成人数（默认 1）
-- children: 儿童数（默认 0）
-- budget_cny: 总预算人民币数值（如"1.5万"→15000）
-- styles: 偏好标签数组，从 [culture, nature, food, family, budget, luxury, adventure] 选
-- notes: 其他自由文本偏好
+_SYSTEM = """你是旅行需求解析器。从用户描述抽取结构化意图，输出严格 JSON。
 
-只输出 JSON，不要任何解释。今天日期：{today}。"""
+字段：
+- destination: 目的地
+- start_date: ISO 日期 YYYY-MM-DD（"11月初"→该月1号或2号，用今天日期推算）
+- end_date: ISO 日期（start_date + days - 1）
+- days: 天数
+- adults: 成人数（默认1）
+- children: 儿童数（默认0，"带爸妈"→adults=3）
+- budget_cny: 总预算人民币（"1.5万"→15000）
+- styles: 从 [culture,nature,food,family,budget,luxury,adventure] 选
+- notes: 其他偏好
+
+注意："带爸妈"表示 adults=3（用户+父母两人）。只输出JSON。今天日期：{today}。"""
 
 
 async def parse_intent(state: TravelState) -> dict:

@@ -139,6 +139,7 @@ def run_streaming(
             for a in d.get("activities", []):
                 p = a.get("place", {})
                 if isinstance(p, dict):
+                    p.setdefault("name", "未命名")
                     p.setdefault("category", "attraction")
                     a["place"] = Place(**p).model_dump()
         itinerary = Itinerary(**data)
