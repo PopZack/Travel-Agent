@@ -9,7 +9,13 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timezone
 
-from amadeus import Client, ResponseError
+try:
+    from amadeus import Client, ResponseError
+    _HAS_AMADEUS = True
+except ImportError:
+    _HAS_AMADEUS = False
+    Client = None  # type: ignore
+    ResponseError = Exception  # type: ignore
 
 from app.tools.cache import cached
 from app.common.config import get_settings
@@ -27,6 +33,10 @@ class AmadeusTool:
     def __init__(self) -> None:
         s = get_settings()
         self._env = s.amadeus_env
+        if not _HAS_AMADEUS:
+            self._client = None
+            logger.info("amadeus SDK 未安装，机酒搜索与预订将跳过。")
+            return
         if not s.amadeus_client_id or not s.amadeus_client_secret:
             self._client = None
             logger.info("Amadeus 未配置，机酒搜索与预订将跳过。")

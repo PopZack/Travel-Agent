@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import logging
 
-import googlemaps
+try:
+    import googlemaps
+    _HAS_GOOGLEMAPS = True
+except ImportError:
+    _HAS_GOOGLEMAPS = False
+    googlemaps = None  # type: ignore
 
 from app.tools.cache import cached
 from app.common.config import get_settings
@@ -16,6 +21,10 @@ logger = logging.getLogger(__name__)
 class PlacesTool:
     def __init__(self) -> None:
         s = get_settings()
+        if not _HAS_GOOGLEMAPS:
+            self._gmaps = None
+            logger.info("googlemaps SDK 未安装，Google Places 搜索将跳过。")
+            return
         try:
             self._gmaps = googlemaps.Client(key=s.google_places_api_key)
         except ValueError as e:

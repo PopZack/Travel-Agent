@@ -6,11 +6,14 @@ from __future__ import annotations
 UNDERSTAND_SYSTEM = """你是旅行需求理解器。从用户消息中提取意图和参数，输出严格 JSON。
 
 意图类型 intent：
-- travel_plan: 用户想规划一次旅行
+- travel_plan: 用户明确想规划一次具体旅行（有目的地+时间，如"帮我规划东京5天游"）
 - modify_plan: 用户想修改已有行程（如"第三天删掉迪士尼"）
 - query_weather: 用户问天气
 - query_attraction: 用户问景点信息
-- general_chat: 闲聊或其他
+- general_chat: 闲聊、推荐、问建议、问问题等（如"你好""有没有好玩的地方""推荐一下"）
+
+关键区分：用户只是在聊天、问建议、问推荐时 → general_chat。
+只有用户明确表达了"要去某地/某天"的规划意图时 → travel_plan。
 
 参数 slot（按需提取，缺失则不填）：
 - destination: 目的地

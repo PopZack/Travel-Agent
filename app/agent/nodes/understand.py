@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import date
 
@@ -17,10 +18,18 @@ async def understand_request(state: TravelState) -> dict:
     user_msg = state["user_message"]
     today = date.today().isoformat()
 
+    # 把对话历史拼进 user 消息，让 LLM 理解上下文
+    history = state.get("messages", [])
+    if history:
+        history_text = "\n".join(f"{m['role']}: {m['content']}" for m in history[-6:])
+        user_content = f"对话历史：\n{history_text}\n\n当前用户消息：{user_msg}"
+    else:
+        user_content = user_msg
+
     try:
         text = await chat(
             system=UNDERSTAND_SYSTEM.format(today=today),
-            user=user_msg,
+            user=user_content,
             max_tokens=1024,
         )
         data = extract_json(text)

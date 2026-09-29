@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -m 'fix: 闲聊不再触发选择表单，对话历史传入 LLM 避免重复回复 *)"
+    ]
+  }
+}
