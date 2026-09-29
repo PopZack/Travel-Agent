@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 # ---------- 理解意图 ----------
-UNDERSTAND_SYSTEM = """你是旅行需求理解器。从用户消息中提取意图和参数，输出严格 JSON。
+UNDERSTAND_SYSTEM = """你是旅行需求理解器。从用户消息和对话历史中提取意图和参数，输出严格 JSON。
 
 意图类型 intent：
-- travel_plan: 用户明确想规划一次具体旅行（有目的地+时间，如"帮我规划东京5天游"）
+- travel_plan: 用户明确想规划一次具体旅行（有目的地+时间，如"帮我规划东京5天游"、"打算去玩"+"3天"）
 - modify_plan: 用户想修改已有行程（如"第三天删掉迪士尼"）
 - query_weather: 用户问天气
 - query_attraction: 用户问景点信息
@@ -15,8 +15,8 @@ UNDERSTAND_SYSTEM = """你是旅行需求理解器。从用户消息中提取意
 关键区分：用户只是在聊天、问建议、问推荐时 → general_chat。
 只有用户明确表达了"要去某地/某天"的规划意图时 → travel_plan。
 
-参数 slot（按需提取，缺失则不填）：
-- destination: 目的地
+参数 slot（按需提取）：
+- destination: 目的地。如果当前消息没提到但对话历史中讨论过某个目的地，请从历史中提取。
 - start_date: ISO 日期 YYYY-MM-DD
 - end_date: ISO 日期
 - days: 天数
@@ -24,6 +24,7 @@ UNDERSTAND_SYSTEM = """你是旅行需求理解器。从用户消息中提取意
 - budget: 预算（人民币数字，"1.5万"→15000）
 - preferences: 偏好列表，从 [culture,nature,food,family,budget,luxury,adventure,shopping] 选
 
+重要：如果对话历史中已提到目的地（如"徐州有什么好玩的"），后续消息"打算去玩""3天"等应继承该目的地。
 注意："带爸妈"表示 travelers=3（用户+父母两人）。
 只输出 JSON。今天日期：{today}。"""
 
