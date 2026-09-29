@@ -11,7 +11,7 @@ from datetime import date, timedelta
 
 from travel_agent.models import ResearchResult
 from travel_agent.state import TravelState
-from travel_agent.tools import AmadeusTool, AmapTool, ExchangeTool, PlacesTool, WeatherTool
+from travel_agent.tools import AmadeusTool, AmapTool, ExchangeTool, PlacesTool, VisaTool, WeatherTool
 
 logger = logging.getLogger(__name__)
 
@@ -23,13 +23,14 @@ async def research(state: TravelState) -> dict:
         return {"status": "error", "error": "无意图，无法研究"}
 
     partial: list[str] = []
-    flights, hotels, attractions, restaurants, weather, rate = [], [], [], [], [], None
+    flights, hotels, attractions, restaurants, weather, rate, visa_info = [], [], [], [], [], None, None
 
     amadeus = AmadeusTool()
     places = PlacesTool()
     weather_tool = WeatherTool()
     exchange = ExchangeTool()
     amap = AmapTool()
+    visa = VisaTool()
 
     # ---------- 并行调度 ----------
     tasks: list[asyncio.Task] = []
@@ -90,6 +91,11 @@ async def research(state: TravelState) -> dict:
         asyncio.create_task(exchange.cny_to(intent.destination), name="exchange")
     )
 
+    # 签证
+    tasks.append(
+        asyncio.create_task(visa.lookup(intent.destination), name="visa")
+    )
+
     # 收集结果（gather 保留任务名顺序）
     named = [t.get_name() for t in tasks]
     gathered = await asyncio.gather(*tasks, return_exceptions=True)
@@ -108,6 +114,8 @@ async def research(state: TravelState) -> dict:
             restaurants = res  # type: ignore[assignment]
         elif name == "exchange":
             rate = res  # type: ignore[assignment]
+        elif name == "visa":
+            visa_info = res  # type: ignore[assignment]
 
     # 天气：优先高德（按城市名），回退 OpenWeather（按坐标）
     weather_days = intent.days or 7
@@ -132,6 +140,7 @@ async def research(state: TravelState) -> dict:
         restaurants=restaurants,
         weather=weather,
         exchange_rate=rate,
+        visa_info=visa_info,
         partial=partial,
     )
     return {"research": result, "status": "planning"}

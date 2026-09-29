@@ -31,6 +31,11 @@ _SYSTEM = """你是旅行规划师。编排按天行程。
 - daily_cost_cny = 当天所有活动 cost_cny 之和 + 住宿费
 - total_cost_cny = 所有天之和，不超预算
 
+如果提供了天气预报，请根据天气调整行程：
+- 雨天优先安排室内活动（博物馆、购物、温泉等）
+- 晴天优先安排户外景点
+- 在 note 中提示天气注意事项
+
 先输出紧凑JSON（一行），然后输出一行 ===TEXT===，最后输出行程概览（中文，每天几行，简洁）。
 
 格式：
@@ -58,10 +63,16 @@ async def plan(state: TravelState) -> dict:
 
     research_data = research.model_dump(mode="json") if research else None
 
+    # 提取天气和签证信息，传给 LLM 辅助决策
+    weather_data = [w.model_dump(mode="json") for w in research.weather] if research and research.weather else None
+    visa_data = research.visa_info if research else None
+
     user_msg = json.dumps(
         {
             "intent": intent.model_dump(mode="json"),
             "research": research_data,
+            "weather": weather_data,
+            "visa_info": visa_data,
             "start_date": start.isoformat(),
             "days": days,
             "note": "research 为 null 表示没有外部 API 数据，请用你自己的知识推荐景点和餐厅。"
@@ -91,5 +102,13 @@ async def plan(state: TravelState) -> dict:
     except Exception as e:
         logger.exception("plan failed")
         return {"status": "error", "error": f"行程编排失败：{e}"}
+
+    # 填充相邻活动间的交通段（距离/时长）
+    try:
+        from travel_agent.postprocess import fill_transit
+
+        itinerary = await fill_transit(itinerary)
+    except Exception as e:
+        logger.warning("fill_transit failed: %s", e)
 
     return {"itinerary": itinerary, "status": "critiquing"}

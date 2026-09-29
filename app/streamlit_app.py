@@ -17,7 +17,7 @@ import uuid
 
 import streamlit as st
 
-from travel_agent.memory import load_preferences, save_trip
+from travel_agent.memory import list_trips, load_preferences, save_preferences, save_trip
 from travel_agent.streaming import run_streaming
 
 st.set_page_config(page_title="旅行 Agent", page_icon="✈️", layout="wide")
@@ -42,11 +42,15 @@ def render_progress(current_step: int, status_text: str) -> None:
     return progress
 
 
-def render_itinerary(itinerary, weather=None) -> None:
+def render_itinerary(itinerary, weather=None, visa_info=None) -> None:
     """渲染按天行程卡片。"""
     if not itinerary or not itinerary.days:
         st.info("暂无行程")
         return
+
+    # 签证提醒
+    if visa_info:
+        st.warning(f"🛂 **签证提醒**：{visa_info}")
 
     # 天气总览
     if weather:
@@ -120,6 +124,17 @@ def main() -> None:
     if prefs:
         st.sidebar.info(f"已载入偏好：{prefs}")
 
+    # 历史行程
+    with st.sidebar:
+        st.subheader("📜 历史行程")
+        trips = list_trips(user_id, limit=5)
+        if trips:
+            for t in trips:
+                with st.expander(f"#{t['id']} {t['query'][:20]}", expanded=False):
+                    st.caption(f"创建于 {t['created_at']}")
+        else:
+            st.caption("暂无历史行程")
+
     # 对话历史
     if "messages" not in st.session_state:
         st.session_state.messages = []
@@ -182,9 +197,10 @@ def main() -> None:
             if status == "awaiting_confirm":
                 st.divider()
                 if state.get("itinerary"):
-                    weather = state.get("research")
-                    weather_data = weather.weather if weather else None
-                    render_itinerary(state["itinerary"], weather_data)
+                    research = state.get("research")
+                    weather_data = research.weather if research else None
+                    visa_data = research.visa_info if research else None
+                    render_itinerary(state["itinerary"], weather_data, visa_data)
                 if state.get("quote"):
                     render_quote(state["quote"])
                     col1, col2 = st.columns(2)
@@ -228,12 +244,23 @@ def _do_booking(state: dict, query: str) -> None:
         f"确认码: {', '.join(result.confirmation_codes)}　"
         f"支付: {result.total_paid_cny:.0f} 元（模拟，未真实扣款）"
     )
+    user_id = st.session_state.get("user_id", "default")
     if state.get("itinerary"):
         save_trip(
-            st.session_state.get("user_id", "default"),
+            user_id,
             query,
             state["itinerary"].model_dump(mode="json"),
         )
+        # 从意图提取偏好并保存
+        intent = state.get("intent")
+        if intent:
+            prefs = {
+                "destination": intent.destination,
+                "styles": [s.value for s in intent.styles],
+                "adults": intent.adults,
+                "children": intent.children,
+            }
+            save_preferences(user_id, prefs)
 
 
 if __name__ == "__main__":

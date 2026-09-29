@@ -102,6 +102,7 @@ class ResearchResult(BaseModel):
     restaurants: list[Place] = Field(default_factory=list)
     weather: list[WeatherDay] = Field(default_factory=list)
     exchange_rate: float | None = Field(default=None, description="CNY→目的地货币")
+    visa_info: str | None = Field(default=None, description="签证要求提示")
     partial: list[str] = Field(default_factory=list, description="失败的工具名")
 
 

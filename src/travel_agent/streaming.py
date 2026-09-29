@@ -17,16 +17,14 @@ from datetime import date, timedelta
 from travel_agent.config import get_settings
 from travel_agent.llm import chat_stream, extract_json
 from travel_agent.models import (
-    Critique,
     Itinerary,
     ParsedIntent,
     Place,
-    Quote,
-    QuoteItem,
     ResearchResult,
     TravelStyle,
 )
 from travel_agent.nodes.research import research
+from travel_agent.postprocess import build_quote, fill_transit
 from travel_agent.state import TravelState
 
 logger = logging.getLogger(__name__)
@@ -122,10 +120,14 @@ def run_streaming(
         else 4
     )
     research_data = r.model_dump(mode="json") if r else None
+    weather_data = [w.model_dump(mode="json") for w in r.weather] if r and r.weather else None
+    visa_data = r.visa_info if r else None
     user_msg = json.dumps(
         {
             "intent": intent.model_dump(mode="json"),
             "research": research_data,
+            "weather": weather_data,
+            "visa_info": visa_data,
             "start_date": start.isoformat(),
             "days": days,
             "note": "research 为 null，请用你自己的知识推荐景点和餐厅。"
@@ -160,55 +162,21 @@ def run_streaming(
         logger.exception("plan failed")
         return {**state, "status": "error", "error": f"行程编排失败：{e}"}
 
+    # 填充交通段
+    try:
+        import asyncio
+
+        itinerary = asyncio.run(fill_transit(itinerary))
+        state["itinerary"] = itinerary
+    except Exception as e:
+        logger.warning("fill_transit failed: %s", e)
+
     # ---------- 4. 生成报价 ----------
     on_status("💰 生成报价…")
     itinerary = state["itinerary"]
     r = state.get("research")
-    items: list[QuoteItem] = []
 
-    if r and r.flights:
-        f = min(r.flights, key=lambda x: x.price_cny)
-        items.append(
-            QuoteItem(
-                type="flight",
-                description=f"{f.airline} {f.flight_number} {f.origin_iata}→{f.dest_iata} "
-                f"{f.depart_time:%m-%d %H:%M}",
-                price_cny=f.price_cny,
-                refundable=False,
-                cancel_policy="机票一经出票不可退",
-            )
-        )
-    if r and r.hotels:
-        h = min(r.hotels, key=lambda x: x.total_cny)
-        items.append(
-            QuoteItem(
-                type="hotel",
-                description=f"{h.name} {h.check_in}~{h.check_out}",
-                price_cny=h.total_cny,
-                refundable=True,
-                cancel_policy="入住前 48 小时可免费取消",
-            )
-        )
-    for day in itinerary.days:
-        for act in day.activities:
-            if act.cost_cny > 0:
-                items.append(
-                    QuoteItem(
-                        type="activity",
-                        description=f"D{day.day} {act.time_start} {act.place.name}",
-                        price_cny=act.cost_cny,
-                        refundable=True,
-                        cancel_policy="活动开始前 24 小时可取消",
-                    )
-                )
-    total = sum(i.price_cny for i in items)
-    from datetime import datetime, timezone
-
-    state["quote"] = Quote(
-        items=items,
-        total_cny=total,
-        expires_at=datetime.now(timezone.utc) + timedelta(minutes=15),
-    )
+    state["quote"] = build_quote(itinerary, r)
     state["status"] = "awaiting_confirm"
     on_status("✅ 规划完成，请确认报价")
     return state
