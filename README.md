@@ -1,44 +1,70 @@
 # Travel Agent ✈️
 
-旅行智能体 — 从自然语言需求到行程规划、报价确认、真实预订下单的完整闭环。
+旅行智能体 — FastAPI + LangGraph Agent Loop，从自然语言对话到行程规划、修改、保存的完整闭环。
 
 ## 能力
 
-- 🗣️ **自然语言意图理解**：「11 月初带爸妈去京都 4 天，预算 1.5 万，喜欢文化少走路」
-- 🔍 **实时数据检索**：机票（Amadeus）、酒店、景点餐厅（Google Places）、天气、路线、汇率
-- 📅 **智能行程编排**：按天排日程，考虑开放时间、交通时长、体力、预算
-- 🔎 **第二视角审查**：自动检查赶路过多/景点关门/预算超支，不通过自动重排（最多 3 轮）
-- ✅ **人工确认下单**：报价展示 → 用户显式确认 → 下单（价格变动 >5% 触发二次确认）
-- 🧠 **用户记忆**：记住偏好与历史行程
+- 🗣️ **自然语言对话**：闲聊、问推荐、问景点，Agent 自然回应
+- 🧠 **意图理解**：自动区分闲聊 / 规划行程 / 修改行程 / 问天气
+- ❓ **主动追问**：信息不完整时返回结构化选择选项（目的地/天数/预算/人数）
+- 🔍 **实时数据检索**：景点/餐厅（高德+Google Places）、天气、汇率、签证
+- 📅 **智能行程编排**：按天排日程，考虑天气、开放时间、预算
+- 🔎 **行程审查**：自动检查赶路过多/预算超支，不通过自动重排
+- ✏️ **Re-planning**：用户说"第三天删掉迪士尼"即可修改已有行程
+- 💾 **行程保存**：SQLite 持久化，支持历史查询
+- 🧠 **对话记忆**：多轮对话上下文，继承目的地等信息
 
 ## 架构
 
 ```
-用户输入 ──▶ Streamlit UI ──▶ LangGraph 状态机 ──▶ 工具层 ──▶ 外部 API
-                  ▲                  │
-                  │   (interrupt)    ▼
-                  └── 待确认/结果 ── 预订节点
+用户 → FastAPI → LangGraph → Travel Agent
+                      │
+          ┌───────────┼───────────┐
+          ▼           ▼           ▼
+         LLM        Tools        Memory
+          │           │           │
+       理解/决策     执行        SQLite
 ```
 
-LangGraph 节点：`parse_intent → research → plan → critique ⇄ present → await_confirm → book → END`
+### LangGraph 节点流程
 
-- **parse_intent**：LLM 抽取结构化意图
-- **research**：并行调 5 个工具（asyncio.gather）
-- **plan**：LLM 编排按天行程
-- **critique**：独立 LLM 审查，不通过回 plan
-- **present**：生成报价
-- **book**：`interrupt` 暂停等用户确认，resume 后调 Amadeus 下单
+```
+START → understand → check_info
+                        ↓
+                  信息完整？
+                  /       \
+                No         Yes
+                ↓           ↓
+           ask_user     call_tools → (travel_plan → plan_trip / modify_plan → replan)
+                ↓                       ↓
+              END                  validate_plan
+                                     ↓
+                                   合格？
+                                  /       \
+                                No         Yes
+                                ↓           ↓
+                              replan    final_response → END
+```
+
+### 各节点职责
+
+| 节点 | 职责 |
+|------|------|
+| understand_request | LLM 从用户消息+对话历史提取 intent + slot |
+| check_information | 检查必填字段，设 missing_fields |
+| ask_user | 生成结构化选择式追问 |
+| call_tools | 并行调景点/餐厅/天气/汇率/签证工具 |
+| plan_trip | LLM 生成结构化行程 |
+| validate_plan | 检查行程合理性，不通过回 replan |
+| replan | 读取当前行程，根据用户请求修改 |
+| final_response | 有行程→总结；无行程→闲聊回复 |
 
 ## 快速开始
 
 ### 1. 安装依赖
 
 ```bash
-# 推荐用 uv（快）
-uv sync
-
-# 或用 pip
-pip install -e ".[dev]"
+uv sync --extra dev
 ```
 
 ### 2. 配置 API Key
@@ -49,21 +75,24 @@ cp .env.example .env
 ```
 
 需要的 key：
-| Key | 用途 | 申请地址 |
-|-----|------|---------|
-| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | LLM（火山方舟，OpenAI 兼容） | https://www.volcengine.com/product/ark |
-| `AMADEUS_CLIENT_ID/SECRET` | 机票酒店 | https://developers.amadeus.com |
-| `GOOGLE_PLACES_API_KEY` | 景点餐厅 | https://console.cloud.google.com |
-| `OPENWEATHER_API_KEY` | 天气 | https://openweathermap.org/api |
-| `EXCHANGE_RATE_API_KEY` | 汇率（可选） | https://www.exchangerate-api.com |
+| Key | 用途 | 必需 | 申请地址 |
+|-----|------|------|---------|
+| `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` | LLM（火山方舟，OpenAI 兼容） | ✅ | https://www.volcengine.com/product/ark |
+| `AMAP_API_KEY` | 高德地图（景点/天气） | 推荐 | https://lbs.amap.com |
+| `GOOGLE_PLACES_API_KEY` | Google Places | ❌ | https://console.cloud.google.com |
+| `OPENWEATHER_API_KEY` | OpenWeather | ❌ | https://openweathermap.org |
+| `AMADEUS_CLIENT_ID/SECRET` | 机票酒店 | ❌ | https://developers.amadeus.com |
 
-### 3. 运行
+> 未配置的可选 key 不影响运行，对应工具自动跳过。
+
+### 3. 启动
 
 ```bash
-streamlit run app/streamlit_app.py
+uvicorn app.main:app --reload
 ```
 
-浏览器打开 http://localhost:8501，输入旅行需求即可。
+- 前端：http://localhost:8000
+- API 文档：http://localhost:8000/docs
 
 ### 4. 测试
 
@@ -71,46 +100,79 @@ streamlit run app/streamlit_app.py
 pytest
 ```
 
-## 安全说明
+## API
 
-- **默认 `AMADEUS_ENV=test`**：下单只返回模拟 PNR，不真实扣款。切到 `prod` 需自行申请 Amadeus 生产授权。
-- **全程 human-in-the-loop**：每笔下单前必须在界面上显式确认。
-- **API key 走 `.env`**，已 in `.gitignore`，不进 git。
+| 接口 | 说明 |
+|------|------|
+| `POST /api/chat` | 核心接口，发送消息，返回回复/行程/追问选项 |
+| `GET /api/travel/plans` | 行程列表 |
+| `GET /api/travel/plans/{id}` | 行程详情 |
+| `DELETE /api/travel/plans/{id}` | 删除行程 |
+| `GET /health` | 健康检查 |
+
+### 对话示例
+
+```bash
+# 闲聊
+curl -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "你好"}'
+
+# 规划行程
+curl -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "帮我规划东京5天游，预算5000，喜欢美食"}'
+
+# 修改行程（多轮对话）
+curl -X POST http://localhost:8000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message": "第三天删掉迪士尼", "conversation_id": "xxx"}'
+```
 
 ## 项目结构
 
 ```
-src/travel_agent/
-├── config.py          # 配置加载
-├── state.py           # LangGraph 状态
-├── graph.py           # 状态图构建
-├── nodes/             # 6 个节点
-├── tools/             # 6 个工具（Amadeus/Places/Weather/Routing/Exchange/Visa）
-├── models/            # pydantic 数据模型
-├── memory/            # SQLite 记忆
-└── cache.py           # TTL 缓存
-app/streamlit_app.py   # Web UI
-tests/                 # 单测
+app/
+├── main.py                      # FastAPI 入口
+├── api/routers/
+│   ├── chat.py                  # POST /api/chat
+│   ├── travel.py                # 行程 CRUD
+│   └── frontend.py              # 聊天 UI
+├── agent/
+│   ├── graph.py                 # LangGraph 状态图
+│   ├── state.py                 # TravelState
+│   ├── nodes/                   # 8 个节点
+│   ├── prompts.py               # 各节点 prompt
+│   └── llm.py                   # AsyncOpenAI
+├── tools/                       # 7 个工具 + budget
+├── schemas/                     # Pydantic 请求/响应
+├── services/                    # 业务逻辑
+├── repositories/                # 数据 CRUD
+├── models/                      # SQLAlchemy ORM
+├── infrastructure/              # DB + Redis + HTTP
+└── common/                      # config + exceptions + logging
+tests/
 ```
 
 ## 技术栈
 
 | 层 | 选型 |
 |----|------|
+| Web 框架 | FastAPI |
 | Agent 框架 | LangGraph |
-| LLM | 火山方舟（OpenAI 兼容接口），默认模型由 .env 的 LLM_MODEL 指定 |
-| 数据源 | Amadeus · Google Places · OpenWeather · OSRM · exchangerate |
-| 存储 | SQLite（记忆）+ 内存缓存（MVP） |
-| 界面 | Streamlit |
-| 包管理 | uv / hatch |
+| LLM | 火山方舟（OpenAI 兼容接口） |
+| 数据源 | 高德地图 · Google Places · OpenWeather · OSRM · Amadeus |
+| ORM | SQLAlchemy |
+| 数据库 | SQLite（可切 MySQL） |
+| 缓存 | 内存 TTL（可切 Redis） |
+| 校验 | Pydantic v2 |
+| 测试 | pytest + respx |
 
-## 后续扩展
+## 安全说明
 
-- [ ] FastAPI 后端（供移动端/第三方集成）
-- [ ] Redis 缓存
-- [ ] 自建 OSRM 容器（docker-compose 已预留）
-- [ ] 多用户登录
-- [ ] 行中助手（改签、附近推荐）
+- **默认 `AMADEUS_ENV=test`**：下单只返回模拟 PNR，不真实扣款
+- **API key 走 `.env`**，已 in `.gitignore`
+- **不做用户注册/登录/JWT/RBAC**，保持简洁
 
 ## License
 
