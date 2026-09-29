@@ -18,10 +18,11 @@ async def understand_request(state: TravelState) -> dict:
     user_msg = state["user_message"]
     today = date.today().isoformat()
 
-    # 把对话历史拼进 user 消息，让 LLM 理解上下文
+    # 把对话历史拼进 user 消息，让 LLM 理解上下文（只取最近 4 条，截断长内容）
     history = state.get("messages", [])
     if history:
-        history_text = "\n".join(f"{m['role']}: {m['content']}" for m in history[-6:])
+        recent = history[-4:]
+        history_text = "\n".join(f"{m['role']}: {m['content'][:200]}" for m in recent)
         user_content = f"对话历史：\n{history_text}\n\n当前用户消息：{user_msg}"
     else:
         user_content = user_msg

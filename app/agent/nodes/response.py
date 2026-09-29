@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 _CHAT_SYSTEM = """你是旅行助手，友好地回应用户。
 
 根据对话历史和当前消息自然地回应。如果用户闲聊就聊天，问推荐就推荐，问问题就回答。
-回复简洁自然，不要重复之前说过的内容。"""
+回复简洁自然，不要重复之前说过的内容。每次都要有实质回复，不能返回空内容。"""
 
 
 async def final_response(state: TravelState) -> dict:
@@ -39,14 +39,15 @@ async def final_response(state: TravelState) -> dict:
             response = f"已为您规划好{days}天行程，总费用约{total:.0f}元。"
         return {"response": response, "status": "done"}
 
-    # 无行程 → 闲聊/通用回复（带对话历史）
+    # 无行程 → 闲聊/通用回复
     user_msg = state.get("user_message", "")
     history = state.get("messages", [])
 
-    # 拼对话历史
-    if history:
-        history_text = "\n".join(f"{m['role']}: {m['content']}" for m in history[-6:])
-        user_content = f"对话历史：\n{history_text}\n\n当前用户消息：{user_msg}"
+    # 只取最近 4 条消息，避免长历史干扰
+    recent = history[-4:] if len(history) > 4 else history
+    if recent:
+        history_text = "\n".join(f"{m['role']}: {m['content'][:200]}" for m in recent)
+        user_content = f"对话历史：\n{history_text}\n\n当前用户消息：{user_msg}\n\n请回复当前用户消息："
     else:
         user_content = user_msg
 
@@ -59,6 +60,17 @@ async def final_response(state: TravelState) -> dict:
     except Exception as e:
         logger.exception("final_response chat failed")
         response = ""
+
+    # 空回复兜底：不带历史再试一次
+    if not response.strip():
+        try:
+            response = await chat(
+                system="你是旅行助手，请回应用户的消息。",
+                user=user_msg,
+                max_tokens=512,
+            )
+        except Exception:
+            pass
 
     if not response.strip():
         response = "你好！我是旅行助手，可以帮你规划行程。告诉我你想去哪里、玩几天、预算多少就行。"
