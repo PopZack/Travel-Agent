@@ -44,12 +44,21 @@ def _stream_llm(
     max_tokens: int,
     model: str,
     on_chunk: Callable[[str], None],
+    show_after: str | None = None,
 ) -> str:
-    """流式调 LLM，逐 chunk 回调，返回完整文本。"""
+    """流式调 LLM，逐 chunk 回调，返回完整文本。
+
+    若指定 show_after，则遇到该分隔符后才开始回调给 UI（用于"先JSON再可读文字"的场景）。
+    """
     buf = []
+    showing = show_after is None  # 无分隔符则全程显示
     for chunk in chat_stream(system, user, max_tokens=max_tokens, model=model):
         buf.append(chunk)
-        on_chunk(chunk)
+        if showing:
+            on_chunk(chunk)
+        # 检查是否进入显示区
+        if show_after and show_after in "".join(buf):
+            showing = True
     return "".join(buf)
 
 
@@ -133,8 +142,11 @@ def run_streaming(
             max_tokens=8192,
             model=s.planner_model or s.llm_model,
             on_chunk=on_chunk,
+            show_after="===TEXT===",
         )
-        data = extract_json(text)
+        # JSON 在 ===TEXT=== 之前
+        json_part = text.split("===TEXT===", 1)[0] if "===TEXT===" in text else text
+        data = extract_json(json_part)
         for d in data.get("days", []):
             for a in d.get("activities", []):
                 p = a.get("place", {})

@@ -31,8 +31,14 @@ _SYSTEM = """你是旅行规划师。编排按天行程。
 - daily_cost_cny = 当天所有活动 cost_cny 之和 + 住宿费
 - total_cost_cny = 所有天之和，不超预算
 
-输出紧凑JSON，不要代码块，不要解释：
-{"days":[{"day":1,"date":"YYYY-MM-DD","activities":[{"time_start":"09:00","time_end":"11:30","place":{"name":"清水寺","category":"attraction"},"note":"少走路提示","cost_cny":20},{"time_start":"12:00","time_end":"13:00","place":{"name":"午餐店","category":"restaurant"},"cost_cny":600}],"hotel":"酒店名","daily_cost_cny":1200}],"total_cost_cny":4800}"""
+先输出紧凑JSON（一行），然后输出一行 ===TEXT===，最后输出行程概览（中文，每天几行，简洁）。
+
+格式：
+{"days":[{"day":1,"date":"YYYY-MM-DD","activities":[{"time_start":"09:00","time_end":"11:30","place":{"name":"清水寺","category":"attraction"},"note":"提示","cost_cny":20}],"hotel":"酒店名","daily_cost_cny":1200}],"total_cost_cny":4800}
+===TEXT===
+第1天 11-01
+上午 清水寺（门票20元）
+中午 京都拉面（600元）"""
 
 
 async def plan(state: TravelState) -> dict:

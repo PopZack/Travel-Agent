@@ -5,8 +5,8 @@
 
 功能：
 - 对话框输入旅行需求
-- LLM 生成过程实时流式输出（逐字显示）
-- 展示按天行程卡片
+- 友好进度条（不显示原始 JSON）
+- 按天行程卡片 + 天气 + 地图链接
 - 报价确认按钮（human-in-the-loop）
 - 下单结果展示
 """
@@ -22,25 +22,77 @@ from travel_agent.streaming import run_streaming
 
 st.set_page_config(page_title="旅行 Agent", page_icon="✈️", layout="wide")
 
+# 进度步骤
+_STEPS = ["🔍 解析意图", "🌐 搜索数据", "📅 编排行程", "💰 生成报价"]
 
-def render_itinerary(itinerary) -> None:
+
+def render_progress(current_step: int, status_text: str) -> None:
+    """渲染进度条。"""
+    progress = st.progress(0)
+    cols = st.columns(len(_STEPS))
+    for i, (col, label) in enumerate(zip(cols, _STEPS)):
+        if i < current_step:
+            col.markdown(f"✅ {label}")
+        elif i == current_step:
+            col.markdown(f"🔄 {label}")
+        else:
+            col.markdown(f"⬜ {label}")
+    if current_step < len(_STEPS):
+        progress.progress((current_step + 1) / len(_STEPS))
+    return progress
+
+
+def render_itinerary(itinerary, weather=None) -> None:
     """渲染按天行程卡片。"""
     if not itinerary or not itinerary.days:
         st.info("暂无行程")
         return
+
+    # 天气总览
+    if weather:
+        with st.expander("🌤️ 天气预报", expanded=False):
+            cols = st.columns(min(len(weather), 7))
+            for i, w in enumerate(weather[:7]):
+                if i < len(cols):
+                    with cols[i]:
+                        st.markdown(f"**{w.date}**")
+                        st.markdown(f"{w.condition}")
+                        st.caption(f"{w.temp_low_c:.0f}~{w.temp_high_c:.0f}°C")
+
     for day in itinerary.days:
-        with st.expander(f"第 {day.day} 天 — {day.date}　💰 {day.daily_cost_cny:.0f} 元", expanded=True):
+        with st.expander(f"📅 第 {day.day} 天 — {day.date}　💰 {day.daily_cost_cny:.0f} 元", expanded=True):
             if day.hotel:
                 st.markdown(f"🏨 **住宿**：{day.hotel}")
+
+            # 活动列表
             for act in day.activities:
+                icon = _category_icon(act.place.category)
+                cost = f"　💰 {act.cost_cny:.0f}" if act.cost_cny else ""
+                note = f"　{act.note}" if act.note else ""
                 st.markdown(
-                    f"- `{act.time_start}–{act.time_end}` **{act.place.name}**"
-                    f"{'　' + act.note if act.note else ''}"
-                    f"{'　💰' + f'{act.cost_cny:.0f}' if act.cost_cny else ''}"
+                    f"{icon} `{act.time_start}–{act.time_end}` **{act.place.name}**{note}{cost}"
                 )
+                # 高德地图链接
+                if act.place.lat and act.place.lng:
+                    url = f"https://uri.amap.com/marker?position={act.place.lng},{act.place.lat}&name={act.place.name}"
+                    st.caption(f"📍 [在高德地图中查看]({url})")
+
             if day.transit:
-                st.caption(" → ".join(f"{t.from_name}→{t.to_name}({t.duration_min:.0f}分钟)" for t in day.transit))
+                st.caption("🚗 " + " → ".join(f"{t.from_name}→{t.to_name}({t.duration_min:.0f}分钟)" for t in day.transit))
+
     st.markdown(f"### 💰 总计：{itinerary.total_cost_cny:.0f} 元")
+
+
+def _category_icon(category: str) -> str:
+    """根据活动类型返回图标。"""
+    c = (category or "").lower()
+    if "restaurant" in c or "餐" in c:
+        return "🍽️"
+    if "hotel" in c or "住宿" in c:
+        return "🏨"
+    if "transport" in c or "交通" in c:
+        return "🚗"
+    return "📍"
 
 
 def render_quote(quote) -> None:
@@ -82,44 +134,57 @@ def main() -> None:
             st.markdown(query)
 
         with st.chat_message("assistant"):
-            # 状态行（实时更新"正在解析…""正在编排…"）
-            status_box = st.empty()
-            # LLM 流式输出区
-            stream_box = st.empty()
+            # 进度区
+            progress_container = st.container()
+            # 流式文字区（像 DeepSeek 那样逐字显示）
+            stream_area = st.empty()
+            step_map = {"解析": 0, "搜索": 1, "编排": 2, "报价": 3, "完成": 4}
+            current_step = 0
 
-            current_status = ""
+            with progress_container:
+                step_boxes = st.columns(len(_STEPS))
+                status_line = st.empty()
 
             def on_status(msg: str) -> None:
-                nonlocal current_status
-                current_status = msg
-                status_box.markdown(f"**{msg}**")
+                nonlocal current_step
+                for key, idx in step_map.items():
+                    if key in msg:
+                        current_step = idx
+                        break
+                for i, (box, label) in enumerate(zip(step_boxes, _STEPS)):
+                    if i < current_step:
+                        box.markdown(f"✅ {label}")
+                    elif i == current_step:
+                        box.markdown(f"🔄 {label}")
+                    else:
+                        box.markdown(f"⬜ {label}")
+                status_line.caption(msg)
+
+            # 逐字追加显示（DeepSeek 风格）
+            displayed = []
 
             def on_chunk(chunk: str) -> None:
-                # 追加到流式区（用 markdown 实时拼接）
-                pass  # 用 st.write_stream 更好，见下方
+                displayed.append(chunk)
+                stream_area.markdown("".join(displayed))
 
-            # 用 st.write_stream 包装 LLM 流式输出
-            # 但 run_streaming 是同步函数，内部调 on_chunk
-            # 改用：直接调 run_streaming，on_chunk 往 stream_box 追加
-            collected = []
+            state = run_streaming(query, on_chunk, on_status)
 
-            def on_chunk_collect(chunk: str) -> None:
-                collected.append(chunk)
-                # 实时显示当前 LLM 输出（JSON 原文，让用户看到在生成）
-                stream_box.code("".join(collected), language="json")
+            # 清掉流式文字，后面用卡片展示
+            stream_area.empty()
 
-            state = run_streaming(query, on_chunk_collect, on_status)
-
-            # 清掉流式 JSON 原文（太长不好看），换成状态完成提示
-            stream_box.empty()
-            status_box.markdown(f"**✅ {current_status}**")
+            # 完成进度
+            for i, (box, label) in enumerate(zip(step_boxes, _STEPS)):
+                box.markdown(f"✅ {label}")
+            status_line.empty()
 
             status = state.get("status")
 
             if status == "awaiting_confirm":
                 st.divider()
                 if state.get("itinerary"):
-                    render_itinerary(state["itinerary"])
+                    weather = state.get("research")
+                    weather_data = weather.weather if weather else None
+                    render_itinerary(state["itinerary"], weather_data)
                 if state.get("quote"):
                     render_quote(state["quote"])
                     col1, col2 = st.columns(2)
