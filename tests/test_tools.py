@@ -2,15 +2,13 @@
 
 from datetime import date
 
-import httpx
 import respx
 
 
 @respx.mock
 async def test_weather_forecast_parses():
-    from travel_agent.tools.weather import WeatherTool
+    from app.tools.weather import WeatherTool
 
-    # mock OpenWeather 响应
     respx.get("https://api.openweathermap.org/data/2.5/forecast").respond(
         json={
             "list": [
@@ -30,9 +28,6 @@ async def test_weather_forecast_parses():
         }
     )
 
-    # 用 monkeypatch 绕过 settings 校验
-    import travel_agent.tools.weather as w
-
     tool = object.__new__(WeatherTool)
     tool._key = "fake"
     days = await tool.forecast(35.0, 135.0, days=1)
@@ -43,7 +38,7 @@ async def test_weather_forecast_parses():
 
 @respx.mock
 async def test_routing_osrm():
-    from travel_agent.tools.routing import RoutingTool
+    from app.tools.routing import RoutingTool
 
     respx.get("http://router.project-osrm.org/route/v1/driving/135.0,35.0;135.5,35.5").respond(
         json={"routes": [{"distance": 60000, "duration": 3600}]}
@@ -58,14 +53,43 @@ async def test_routing_osrm():
 
 
 def test_exchange_currency_map():
-    from travel_agent.tools.exchange import _DEST_CURRENCY
+    from app.tools.exchange import _DEST_CURRENCY
 
     assert _DEST_CURRENCY["京都"] == "JPY"
     assert _DEST_CURRENCY["曼谷"] == "THB"
 
 
 def test_visa_lookup_local_table():
-    from travel_agent.tools.visa import VisaTool, _VISA_TABLE
+    from app.tools.visa import VisaTool, _VISA_TABLE
 
     assert "日本" in _VISA_TABLE
     assert "免签" in _VISA_TABLE["泰国"]
+
+
+def test_budget_calculate():
+    from app.tools.budget import BudgetTool
+    import asyncio
+
+    tool = BudgetTool()
+    total = asyncio.run(tool.calculate_total([100, 200, 300]))
+    assert total == 600.0
+
+
+def test_budget_check_over():
+    from app.tools.budget import BudgetTool
+    import asyncio
+
+    tool = BudgetTool()
+    result = asyncio.run(tool.check_budget(6000, 5000))
+    assert result["over_budget"] is True
+    assert result["surplus"] == -1000.0
+
+
+def test_budget_split():
+    from app.tools.budget import BudgetTool
+    import asyncio
+
+    tool = BudgetTool()
+    result = asyncio.run(tool.split_budget(10000, 5))
+    assert result["hotel"] == 3500.0
+    assert result["per_day"] == 2000.0
