@@ -11,7 +11,7 @@ from datetime import date, timedelta
 
 from travel_agent.models import ResearchResult
 from travel_agent.state import TravelState
-from travel_agent.tools import AmadeusTool, ExchangeTool, PlacesTool, WeatherTool
+from travel_agent.tools import AmadeusTool, AmapTool, ExchangeTool, PlacesTool, WeatherTool
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ async def research(state: TravelState) -> dict:
     places = PlacesTool()
     weather_tool = WeatherTool()
     exchange = ExchangeTool()
+    amap = AmapTool()
 
     # ---------- 并行调度 ----------
     tasks: list[asyncio.Task] = []
@@ -65,13 +66,21 @@ async def research(state: TravelState) -> dict:
     else:
         partial.append("hotels(缺日期)")
 
-    # 景点 + 餐厅
-    tasks.append(
-        asyncio.create_task(places.search_attractions(intent.destination), name="attractions")
-    )
-    tasks.append(
-        asyncio.create_task(places.search_restaurants(intent.destination), name="restaurants")
-    )
+    # 景点 + 餐厅（优先高德，回退 Google Places）
+    async def _search_attractions():
+        r = await amap.search_places(intent.destination, category="attraction")
+        if r:
+            return r
+        return await places.search_attractions(intent.destination)
+
+    async def _search_restaurants():
+        r = await amap.search_places(intent.destination, category="restaurant")
+        if r:
+            return r
+        return await places.search_restaurants(intent.destination)
+
+    tasks.append(asyncio.create_task(_search_attractions(), name="attractions"))
+    tasks.append(asyncio.create_task(_search_restaurants(), name="restaurants"))
 
     # 天气（需坐标；用第一个景点的坐标，或目的地 geocode）
     # MVP：用景点坐标；若没有则跳过
@@ -100,16 +109,21 @@ async def research(state: TravelState) -> dict:
         elif name == "exchange":
             rate = res  # type: ignore[assignment]
 
-    # 天气：用第一个景点坐标
-    if attractions and attractions[0].lat and attractions[0].lng:
-        days = intent.days or 7
+    # 天气：优先高德（按城市名），回退 OpenWeather（按坐标）
+    weather_days = intent.days or 7
+    try:
+        weather = await amap.weather(intent.destination)
+    except Exception as e:
+        logger.warning("amap weather failed: %s", e)
+        weather = []
+    if not weather and attractions and attractions[0].lat and attractions[0].lng:
         try:
-            weather = await weather_tool.forecast(attractions[0].lat, attractions[0].lng, days)
+            weather = await weather_tool.forecast(attractions[0].lat, attractions[0].lng, weather_days)
         except Exception as e:
             logger.warning("weather failed: %s", e)
             partial.append("weather")
-    else:
-        partial.append("weather(无坐标)")
+    elif not weather:
+        partial.append("weather(无数据)")
 
     result = ResearchResult(
         flights=flights,

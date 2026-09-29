@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     # 汇率（可选）
     exchange_rate_api_key: str | None = None
 
+    # 高德地图（可选：景点/路线/天气，国内数据好）
+    amap_api_key: str | None = None
+
     # OSRM
     osrm_base_url: str = "http://router.project-osrm.org"
 
