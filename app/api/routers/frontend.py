@@ -121,8 +121,11 @@ function renderPlan(plan) {
   for (const day of plan.days) {
     html += '<div class="day-card"><div class="day-title">Day ' + day.day + (day.date ? ' · ' + day.date : '') + (day.hotel ? ' · 🏨 ' + day.hotel : '') + '</div>';
     if (day.activities) for (const a of day.activities) {
-      html += '<div class="activity">' + (a.time_start||'') + '-' + (a.time_end||'') + ' ' + (a.place_name||a.place?.name||'') + (a.cost ? ' <span class="cost">¥' + a.cost + '</span>' : '') + (a.note ? ' — ' + a.note : '') + '</div>';
+      html += '<div class="activity">' + (a.time_start||'') + '-' + (a.time_end||'') + ' ' + (a.place_name||a.place?.name||'') + ' <span class="cost">¥' + (a.cost||0) + '</span>' + (a.note ? ' — ' + a.note : '') + '</div>';
     }
+    const actCost = (day.activities||[]).reduce((s,a) => s + (a.cost||0), 0);
+    const hotelCost = (day.daily_cost||0) - actCost;
+    if (hotelCost > 0) html += '<div class="activity">🏨 住宿 <span class="cost">¥' + hotelCost + '</span></div>';
     if (day.daily_cost) html += '<div class="activity cost">当日合计：¥' + day.daily_cost + '</div>';
     html += '</div>';
   }
